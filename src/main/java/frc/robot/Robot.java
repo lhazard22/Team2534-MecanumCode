@@ -5,7 +5,9 @@ import edu.wpi.first.wpilibj.drive.MecanumDrive;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.DoubleSolenoid.Value;
 import com.ctre.phoenix.motorcontrol.can.*;
+import com.ctre.phoenix.motorcontrol.ControlMode;
 import com.ctre.phoenix.motorcontrol.IMotorController;
+import com.ctre.phoenix.motorcontrol.DemandType;
 import edu.wpi.first.wpilibj.*;
 //import edu.wpi.first.wpilibj.SensorBase;
 //import edu.wpi.first.wpilibj.PWM;
@@ -51,48 +53,85 @@ public class Robot extends IterativeRobot {
   WPI_TalonSRX frontRight;
   WPI_TalonSRX rearRight;
   WPI_TalonSRX ballIntake;
-  WPI_TalonSRX elevator;
+  WPI_TalonSRX m_Climb;
+  WPI_TalonSRX s_Climb;
+  WPI_TalonSRX d_Climb;
+  WPI_TalonSRX drive_Climb;
   // Old Robot: 0
   // New Robot: 1
-  int robotMode = 1;
+  int robotMode = 0;
 
-  Encoder testCoder;
+  //Encoder testCoder;
 
-  double deadzone = 0.15;
-  double joyY = 0;
-  double m_JoyY = 0;
-  double joyX = 0;
-  double joyZ = 0;
-  double rightTrigger = 0;
-  boolean buttonA;
-  boolean m_ButtonA;
-  boolean buttonB;
-  boolean m_ButtonB;
-  boolean buttonX;
-  boolean m_ButtonX;
-  boolean buttonY;
-  boolean buttonRight;
-  boolean m_ButtonRight;
-  boolean buttonLeft;
-  boolean m_ButtonLeft;
-  double target = 0.5;
-  double correctSpeed = 0.2;
-  XboxController controller = new XboxController(RobotMap.xBoxControllerChannel);
-  XboxController manipulator = new XboxController(RobotMap.xBoxManipulatorControllerChannel);
-  int frames = 30;
-  double currentData;
-  public double preTime = 0.0; 
-  int ledCode = 1;
+  double db_joyDeadzone = 0.15;
+  double db_cntlDriverJoyLeftY = 0;
+  double db_cntlManipJoyLeftY = 0;
+  double db_cntlDriverJoyLeftX = 0;
+  double db_cntlDriverJoyRightX = 0;
+  double db_cntlManipJoyRightX = 0;
+  double db_cntlManipJoyRightY = 0;
+  double db_cntlDriverTriggerRight = 0;
+  double db_cntlManipTriggerRight = 0;
+  boolean b_cntlDriverButtonA;
+  boolean b_cntlManipButtonA;
+  boolean b_cntlDriverButtonB;
+  boolean b_cntlManipButtonB;
+  boolean b_cntlDriverButtonX;
+  boolean b_cntlManipButtonX;
+  boolean b_cntlDriverButtonY;
+  boolean b_cntlManipButtonY;
+  boolean b_cntlDriverButtonRight;
+  boolean b_cntlManipButtonRight;
+  boolean b_cntlDriverButtonLeft;
+  boolean b_cntlManipButtonLeft;
+  //double target = 0.5;
+  //double correctSpeed = 0.2;
+  XboxController cntlDriver = new XboxController(RobotMap.xBoxControllerChannel);
+  XboxController cntlManipulator = new XboxController(RobotMap.xBoxManipulatorControllerChannel);
+  //int frames = 30;
+  //double currentData;
+  int n_ledColorCode = 1;
   DoubleSolenoid hingeSolenoid = new DoubleSolenoid(RobotMap.hingeSolenoidForwardChannel, RobotMap.hingeSolenoidReverseChannel);
   DoubleSolenoid hatchSolenoid = new DoubleSolenoid(RobotMap.hatchSolenoidForwardChannel, RobotMap.hatchSolenoidReverseChannel);
+  DoubleSolenoid elevatorSolenoid = new DoubleSolenoid(RobotMap.elevatorSolenoidForwardChannel, RobotMap.elevatorSolenoidReverseChannel);
   Compressor compressor = new Compressor();
+  DigitalInput topLimitSwitchFrontRight = new DigitalInput(0);
+  boolean limitTopFrontRight = false;
+  DigitalInput bottomLimitSwitchFrontRight = new DigitalInput(1);
+  boolean limitBottomFrontRight = false;
+  DigitalInput topLimitSwitchFrontLeft = new DigitalInput(2);
+  boolean limitTopFrontLeft = false;
+  DigitalInput bottomLimitSwitchFrontLeft = new DigitalInput(3);
+  boolean limitBottomFrontLeft = false;
+  DigitalInput topLimitSwitchRear = new DigitalInput(4);
+  boolean limitTopRear = false;
+  DigitalInput bottomLimitSwitchRear = new DigitalInput(5);
+  boolean limitBottomRear = false;
+  //AnalogInput infrared = new AnalogInput(0);
+  double voltage = 0;
+  //double encoderValue = 0;
+  double powerFR = 0;
+  double powerFL = 0;
+  double powerR = 0;
+
+  //Timers
+  Timer timer = new Timer();
+  Timer timerSystem = new Timer();
+  double db_prevTime = 0.0;
+  double db_endTime = 0.0;
+  boolean b_ballIntake = false;
+  SampleSmoother timerSmoother = new SampleSmoother(200);
+  //double irDistance = 0;
   
+  //New EndGame Class
+  EndGame endGame = new EndGame();
+
   //Pressure Sensor 
   AnalogInput PressureSensor = new AnalogInput(1);
   double PSVolt;  
 
   //instantiate output of PIDout
-  PIDout output = new PIDout(this); 
+  PIDout outputSkew = new PIDout(this); 
   PIDoutX strafeOutput = new PIDoutX(this);
   PIDoutY forwardOutput = new PIDoutY(this);
   EncoderPID encoderPID = new EncoderPID(this);
@@ -103,7 +142,7 @@ public class Robot extends IterativeRobot {
   EncoderSource encoder = new EncoderSource(this);
 
   //Set PIDs
-  PIDController visionLoop = new PIDController(0.03, 0.0, 0.0, limelight, output);
+  PIDController visionLoop = new PIDController(0.03, 0.0, 0.0, limelight, outputSkew);
   PIDController strafeLoop = new PIDController(0.1, 0.0, 0.0, limelightX, strafeOutput);
   PIDController forwardLoop = new PIDController(0.04, 0.0, 0.0, limelightY, forwardOutput);
   PIDController encoderLoop = new PIDController(0.02, 0.0, 0.0, encoder, encoderPID);
@@ -122,17 +161,24 @@ public class Robot extends IterativeRobot {
 
   @Override
   public void robotInit() {
+    // Setup timers
+    timer.reset();
+    timerSystem.reset();
+    timerSystem.start();
+    db_prevTime = timerSystem.get();
+
+
     //Setup Drive Train
 
     if (robotMode == 0){
       RobotMap.talonFrontRightChannel = 4;
       RobotMap.talonFrontRightReverse = false;
       RobotMap.talonRearRightChannel = 3;
-      RobotMap.talonRearRightReverse = false;
+      RobotMap.talonRearRightReverse = true;
       RobotMap.talonFrontLeftChannel = 2;
       RobotMap.talonFrontLeftReverse = false;
       RobotMap.talonRearLeftChannel = 1;
-      RobotMap.talonRearLeftReverse = false;
+      RobotMap.talonRearLeftReverse = true;
     }else{
       RobotMap.talonFrontRightChannel = 2;
       RobotMap.talonFrontRightReverse = false;
@@ -143,26 +189,47 @@ public class Robot extends IterativeRobot {
       RobotMap.talonRearLeftChannel = 3;
       RobotMap.talonRearLeftReverse = true;
     }
-   
+    //Drive Train
     frontLeft = new WPI_TalonSRX(RobotMap.talonFrontLeftChannel);
     rearLeft = new WPI_TalonSRX(RobotMap.talonRearLeftChannel);
     frontRight = new WPI_TalonSRX(RobotMap.talonFrontRightChannel);
     rearRight = new WPI_TalonSRX(RobotMap.talonRearRightChannel);
-    ballIntake = new WPI_TalonSRX(RobotMap.talonBallIntakeChannel);
-    elevator = new WPI_TalonSRX(RobotMap.talonElevatorChannel);
     frontLeft.setInverted(RobotMap.talonFrontLeftReverse);
     rearLeft.setInverted(RobotMap.talonRearLeftReverse);
     frontRight.setInverted(RobotMap.talonFrontRightReverse);
     rearRight.setInverted(RobotMap.talonRearRightReverse);
     
-    robotDrive = new MecanumDrive(frontLeft, rearLeft, frontRight, rearRight);
+    //Ball and Elevator
+    ballIntake = new WPI_TalonSRX(RobotMap.talonBallIntakeChannel);
     
+    //Endgame
+    m_Climb = new WPI_TalonSRX(RobotMap.talonClimbAChannel);
+    s_Climb = new WPI_TalonSRX(RobotMap.talonClimbBChannel);
+    d_Climb = new WPI_TalonSRX(RobotMap.talonClimbCChannel);
+    drive_Climb = new WPI_TalonSRX(RobotMap.talonClimbDriveChannel);
+    s_Climb.setInverted(true);
+    d_Climb.setInverted(true);
+    s_Climb.follow(m_Climb);
+    
+    
+   robotDrive = new MecanumDrive(frontLeft, rearLeft, frontRight, rearRight);
+    
+    //Initialize EndGame Parameters
+    endGame.driveTrainFrontRight = frontRight;
+    endGame.driveTrainFrontLeft = frontLeft;
+    endGame.driveTrainRearRight = rearRight;
+    endGame.driveTrainRearLeft = rearLeft;
+    endGame.climberFrontMaster = m_Climb;
+    endGame.climberRear = d_Climb;
+    endGame.climberDrive = drive_Climb;
+
+    endGame.init();
     //Start Compressor
     //compressor.start();
 
     //Setup Encoders
-    testCoder = new Encoder(RobotMap.encoderAChannel, RobotMap.encoderBChannel, false, Encoder.EncodingType.k4X);
-    testCoder.setDistancePerPulse((Math.PI * 8) / 360);     
+    //testCoder = new Encoder(RobotMap.encoderAChannel, RobotMap.encoderBChannel, false, Encoder.EncodingType.k4X);
+    //testCoder.setDistancePerPulse((Math.PI * 8) / 360);     
 
     //rearRight.configSelectedFeedbackSensor(FeedbackDevice.CTRE_MagEncoder_Relative, 0, 0);
     //Seting Camera value Ranges and Setpoints
@@ -185,20 +252,32 @@ public class Robot extends IterativeRobot {
     }
   @Override
   public void teleopPeriodic() {
+    // display system speed
+    double db_currentTime = timerSystem.get();
+    double db_deltaTime = db_currentTime - db_prevTime;
+    db_prevTime = db_currentTime;
+    timerSmoother.addSample(db_deltaTime);
+
+
+
+
     //Gather encoder position, post to smartDashboard. Chech to see if B is pressed to reset encoder.
+    //voltage = infrared.getAverageVoltage();
+    //irDistance = 4800/(voltage - 20);
     encoderValue = -rearRight.getSelectedSensorPosition(0);
-    rotations = encoderValue/4000;
-    circumfrence = Math.PI*8;
-    distance = circumfrence * rotations;
-    SmartDashboard.putNumber("Rotations", rotations);
+    //rotations = encoderValue/4000;
+    //circumfrence = Math.PI*8;
+    //distance = circumfrence * rotations;
+    //SmartDashboard.putNumber("Rotations", rotations);
     SmartDashboard.putNumber("Encoder Value", encoderValue);
-    SmartDashboard.putNumber("Distance", distance);
-    if (buttonX) {
+    //SmartDashboard.putNumber("Distance", distance);
+    SmartDashboard.putNumber("Voltage", voltage);
+    if (b_cntlDriverButtonX) {
         rearRight.setSelectedSensorPosition(0, 0, 0);
     }
 
-    SmartDashboard.putNumber("Encoder Distance:" , testCoder.getDistance());   
-    SmartDashboard.putNumber("Encoder Value:" , testCoder.get());  
+    //SmartDashboard.putNumber("Encoder Distance:" , testCoder.getDistance());   
+    //SmartDashboard.putNumber("Encoder Value:" , testCoder.get());  
     
     // Use the joystick X axis for lateral movement, Y axis for forward
     // movement, and Z axis for rotation.
@@ -226,56 +305,67 @@ public class Robot extends IterativeRobot {
       actualSkew = Math.abs(skew) - 90;
     }
     StrafeValue = actualSkew;
-
+    limitTopFrontRight = topLimitSwitchFrontRight.get();
+    powerFR = m_Climb.get();
+    powerFL = s_Climb.get();
+    powerR = d_Climb.get();
     //post to smart dashboard periodically
     SmartDashboard.putNumber("LimelightX", x);
     SmartDashboard.putNumber("LimelightY", y);
     SmartDashboard.putNumber("LimelightArea", area);
     SmartDashboard.putNumber("LimelightSkew", actualSkew);
     SmartDashboard.putNumber("PressureSensPress", PSPress);
+    SmartDashboard.putBoolean("Limit", limitTopFrontRight);
+    SmartDashboard.putNumber("Amps", powerFR);
 
 
-    rightTrigger = controller.getRawAxis(RobotMap.xBoxRightTriggerChannel);
-    buttonA = controller.getRawButton(RobotMap.xBoxButtonAChannel);
-    m_ButtonA = manipulator.getRawButton(RobotMap.xBoxButtonAChannel);
-    buttonB = controller.getRawButton(RobotMap.xBoxButtonBChannel);
-    m_ButtonB = manipulator.getRawButton(RobotMap.xBoxButtonBChannel);
-    buttonX = controller.getRawButton(RobotMap.xBoxButtonXChannel);
-    m_ButtonX = manipulator.getRawButton(RobotMap.xBoxButtonXChannel);
-    buttonRight = controller.getRawButton(RobotMap.xBoxButtonRightChannel);
-    m_ButtonRight = manipulator.getRawButton(RobotMap.xBoxButtonRightChannel);
-    m_ButtonLeft = manipulator.getRawButton(RobotMap.xBoxButtonLeftChannel);
-    joyY = controller.getRawAxis(RobotMap.xBoxLeftStickYChannel);
-    m_JoyY = manipulator.getRawAxis(RobotMap.xBoxLeftStickYChannel);
-    joyX = controller.getRawAxis(RobotMap.xBoxLeftStickXChannel);
-    joyZ = controller.getRawAxis(RobotMap.xBoxRightStickXChannel);
+    db_cntlDriverTriggerRight = cntlDriver.getRawAxis(RobotMap.xBoxdb_cntlDriverTriggerRightChannel);
+    db_cntlManipTriggerRight = cntlManipulator.getRawAxis(RobotMap.xBoxdb_cntlDriverTriggerRightChannel);
+    b_cntlDriverButtonA = cntlDriver.getRawButton(RobotMap.xBoxButtonAChannel);
+    b_cntlManipButtonA = cntlManipulator.getRawButton(RobotMap.xBoxButtonAChannel);
+    b_cntlDriverButtonB = cntlDriver.getRawButton(RobotMap.xBoxButtonBChannel);
+    b_cntlManipButtonB = cntlManipulator.getRawButton(RobotMap.xBoxButtonBChannel);
+    b_cntlDriverButtonX = cntlDriver.getRawButton(RobotMap.xBoxButtonXChannel);
+    b_cntlManipButtonX = cntlManipulator.getRawButton(RobotMap.xBoxButtonXChannel);
+    b_cntlDriverButtonRight = cntlDriver.getRawButton(RobotMap.xBoxButtonRightChannel);
+    b_cntlManipButtonRight = cntlManipulator.getRawButton(RobotMap.xBoxButtonRightChannel);
+    b_cntlManipButtonLeft = cntlManipulator.getRawButton(RobotMap.xBoxButtonLeftChannel);
+    db_cntlDriverJoyLeftY = cntlDriver.getRawAxis(RobotMap.xBoxLeftStickYChannel);
+    db_cntlManipJoyLeftY = cntlManipulator.getRawAxis(RobotMap.xBoxLeftStickYChannel);
+    db_cntlDriverJoyLeftX = cntlDriver.getRawAxis(RobotMap.xBoxLeftStickXChannel);
+    db_cntlDriverJoyRightX = cntlDriver.getRawAxis(RobotMap.xBoxRightStickXChannel);
+    db_cntlManipJoyRightX = cntlManipulator.getRawAxis(RobotMap.xBoxRightStickXChannel);
+    db_cntlManipJoyRightY = cntlManipulator.getRawAxis(RobotMap.xBoxRightStickYChannel);
     
 
     //Read Values on Smartdashboard
-    SmartDashboard.putNumber("JoyX", joyX);
-    SmartDashboard.putNumber("JoyY", joyY);
-    SmartDashboard.putNumber("JoyZ", joyZ);
-    SmartDashboard.putNumber("timer", ledCode);
+    SmartDashboard.putNumber("db_cntlDriverJoyLeftX", db_cntlDriverJoyLeftX);
+    SmartDashboard.putNumber("db_cntlDriverJoyLeftY", db_cntlDriverJoyLeftY);
+    SmartDashboard.putNumber("db_cntlDriverJoyRightX", db_cntlDriverJoyRightX);
+    SmartDashboard.putNumber("timer", n_ledColorCode);
+    SmartDashboard.putNumber("Delta Time",1/db_deltaTime);
+    SmartDashboard.putNumber("Smooth Time", 1/timerSmoother.getAverage());
     
-    //Deadzone
-    if (Math.abs(joyY) < (deadzone)) {
-      joyY = 0;
+    //db_joyDeadzone
+    if (Math.abs(db_cntlDriverJoyLeftY) < (db_joyDeadzone)) {
+      db_cntlDriverJoyLeftY = 0;
     }
-    if (Math.abs(joyX) < (deadzone)) {
-      joyX = 0;
+    if (Math.abs(db_cntlDriverJoyLeftX) < (db_joyDeadzone)) {
+      db_cntlDriverJoyLeftX = 0;
     }
-    if (Math.abs(joyZ) < (deadzone)) {
-      joyZ = 0;
+    if (Math.abs(db_cntlDriverJoyRightX) < (db_joyDeadzone)) {
+      db_cntlDriverJoyRightX = 0;
     }
     
 
-    //Controlling PID Loops 
-    if (buttonA){
+    //Controlling PID Loops
+  
+    if (b_cntlDriverButtonA){
       visionLoop.enable();
       strafeLoop.enable();
       forwardLoop.enable();
-      robotDrive.driveCartesian(-strafeOutput.outputX, -forwardOutput.outputY, output.outputSkew, 0.0);
-    } else if (rightTrigger > 0.6){
+      robotDrive.driveCartesian(-strafeOutput.outputX, -forwardOutput.outputY, outputSkew.output, 0.0);
+    } else if (db_cntlDriverTriggerRight > 0.6){
       encoderLoop.enable();
       robotDrive.driveCartesian(-0.0, encoderPID.outputEncoder, 0.0, 0.0);
     }else{
@@ -283,8 +373,9 @@ public class Robot extends IterativeRobot {
       strafeLoop.disable();
       forwardLoop.disable();
       encoderLoop.disable();
-      robotDrive.driveCartesian(-joyX , joyY , -joyZ , 0.0);
+      robotDrive.driveCartesian(-db_cntlDriverJoyLeftX ,db_cntlDriverJoyLeftY,-db_cntlDriverJoyRightX , 0.0);
     }
+  
 
     //Checking if reflective tape area is less and change LED lights
     if(y < 4)
@@ -317,34 +408,75 @@ public class Robot extends IterativeRobot {
     }
 
 
-    if (buttonB){
+    if (b_cntlDriverButtonB){
       Leds.sendCode(8);
       System.out.println("B press");
     }
 
 
     //Ball Intake State Machine
-    if (m_ButtonA){
-    hingeSolenoid.set(Value.kReverse);
-    ballIntake.set(0.4);
-      if(ballIntake.getSelectedSensorPosition() >= 10){
-      ballIntake.set(0);
+    if (b_cntlManipButtonRight){
+      Leds.sendCode(10);
       hingeSolenoid.set(Value.kReverse);
+      ballIntake.set(0.7);
+      db_currentTime = timer.get();
+      if(ballIntake.getSelectedSensorPosition() >= 3 && b_ballIntake == false){
+        db_endTime = db_currentTime + 1;
+        b_ballIntake = true;
       }
+      if (db_currentTime >= db_endTime){
+        ballIntake.set(0);
+        Leds.sendCode(2);
+        hingeSolenoid.set(Value.kReverse);
+        b_ballIntake = false;
+      }
+    } else if (b_cntlManipButtonLeft){
+      hingeSolenoid.set(Value.kForward);
+      ballIntake.set(0.5);
     } else{
-    ballIntake.set(0);
-    hingeSolenoid.set(Value.kForward);
+      ballIntake.set(0);
+      Leds.sendCode(2); 
+      hingeSolenoid.set(Value.kForward);
+      b_ballIntake = false;
     }
-    if (buttonB){
-    hatchSolenoid.set(Value.kReverse);
-  }else{
-    hatchSolenoid.set(Value.kForward);
+    
+    if (b_cntlManipButtonB){
+      hatchSolenoid.set(Value.kForward);
+    }  else{
+      hatchSolenoid.set(Value.kReverse);
+    }
+  if(topLimitSwitchFrontRight.get() && powerFR > 0 ){
+    m_Climb.set(0);
+  } else if(bottomLimitSwitchFrontRight.get() && powerFR < 0){
+    m_Climb.set(0);
   }
- elevator.set(m_JoyY);
+  
+  if(topLimitSwitchFrontLeft.get() && powerFL > 0 ){
+    m_Climb.set(0);
+  } else if(bottomLimitSwitchFrontLeft.get() && powerFL < 0){
+    m_Climb.set(0);
+  }
+  
+  if(topLimitSwitchRear.get() && powerR > 0 ){
+    d_Climb.set(0);
+  } else if(bottomLimitSwitchRear.get() && powerR < 0){
+    d_Climb.set(0);
+  }
+  
+  if (b_cntlManipButtonX){
+    elevatorSolenoid.set(Value.kForward);
+  } else{
+    elevatorSolenoid.set(Value.kReverse);
+  }
+  m_Climb.set(db_cntlManipJoyRightY *.25);
+  d_Climb.set(db_cntlManipJoyLeftY * .25);
+  drive_Climb.set(db_cntlManipJoyRightX *.25);
 }
 
   public void testPeriodic(){
-  /*Proper Code On Robot
+  /*
+  Things to do before match:
+  Proper Code On Robot
   Ping Talons(Drive Base, Arms)
   Limelight Sees Vision Targets
   Vision Camera Sends Feed
